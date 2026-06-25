@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pop-Tart 300 Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+  body { background:#111; color:#eee; font-family:Arial; padding:20px; }
+  h1,h2 { text-align:center; }
+  h1 { color:#ff9800; }
+  h2 { color:#90caf9; font-weight:normal; }
+  #dropzone {
+    border:2px dashed #666; padding:30px; text-align:center;
+    margin:20px auto; width:60%; border-radius:10px; color:#bbb;
+  }
+  #dropzone:hover { border-color:#ff9800; color:#ff9800; }
+  .input-container { max-width:400px; margin:20px auto; display:flex; gap:8px; }
+  input { flex:1; padding:8px; background:#222; color:#fff; border:1px solid #444; border-radius:4px; }
+  button { padding:8px 14px; background:#ff9800; border:none; border-radius:4px; font-weight:bold; cursor:pointer; }
+  button:hover { background:#ffa726; }
+  .chart-container {
+    max-width:900px; margin:30px auto; background:#1c1c1c;
+    border-radius:10px; padding:20px 25px 30px; display:none;
+  }
+  .exercise-row { margin-bottom:18px; }
+  .exercise-label { display:flex; justify-content:space-between; margin-bottom:6px; }
+  .bars { display:flex; gap:6px; align-items:flex-end; height:120px; background:#121212; padding:6px; border-radius:6px; }
+  .bar { flex:1; border-radius:4px 4px 0 0; display:flex; align-items:flex-end; justify-content:center; color:#fff; font-size:0.7rem; }
+  .date1 { background:#ef5350; }
+  .date2 { background:#42a5f5; }
+  .date3 { background:#66bb6a; }
+  table { width:100%; border-collapse:collapse; margin-top:25px; }
+  th,td { border:1px solid #333; padding:6px; text-align:center; }
+  th { background:#263238; }
+  .highlight { color:#ffeb3b; font-weight:bold; }
+  #message { text-align:center; margin-top:20px; color:#ffeb3b; }
+</style>
+</head>
+<body>
+
+
+<h1>Pop-Tart 300</h1>
+<h2>Excel‑Powered Improvement Visualizer</h2>
+
+<div id="dropzone">Drop your Pop‑Tart 300 Excel file here</div>
+
+<div class="input-container">
+  <select id="participantSelect">
+    <option value="">-- Select Participant --</option>
+  </select>
+  <button onclick="showParticipant()">Go</button>
+</div>
+
+<div id="message"></div>
+
+<div id="chart" class="chart-container">
+  <h2 id="chartTitle"></h2>
+  <div id="chartContent"></div>
+  <div id="legend" class="legend"></div>
+  <div id="tableContainer"></div>
+</div>
+
+<script>
+function populateDropdown() {
+  const dropdown = document.getElementById("participantSelect");
+  dropdown.innerHTML = `<option value="">-- Select Participant --</option>`;
+
+  const names = Object.keys(participants)
+    .sort()
+    .map(n => participants[n].name);
+
+  names.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name.toLowerCase();
+    opt.textContent = name;
+    dropdown.appendChild(opt);
+  });
+}
+
+let participants = {};
+
+document.getElementById("dropzone").addEventListener("dragover", e => {
+  e.preventDefault();
+});
+document.getElementById("dropzone").addEventListener("drop", e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  readExcel(file);
+});
+
+function excelDateToJSDate(serial) {
+  return new Date((serial - 25569) * 86400 * 1000);
+}
+
+function readExcel(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 1 });
+
+    const header = rows[0];
+
+   const col = {
+  date: header.indexOf("Date"),
+  name: header.indexOf("F3 Name"),
+
+  // Your real spreadsheet uses "Hand Release Merkins"
+  hrm: header.indexOf("HRM Total"),
+
+  // These match your sheet already
+  ts: header.indexOf("TS Total"),
+  bbsu: header.indexOf("BBSU Total"),
+  ohp: header.indexOf("OHP Total"),
+  run: header.indexOf("200s Total")
+};
+
+for (const key in col) {
+  if (col[key] === -1) {
+    console.warn("Missing column:", key);
+  }
+}
+    participants = {};
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const name = (r[col.name] || "").toString().trim().toLowerCase();
+      if (!name) continue;
+
+      const dateRaw = r[col.date];
+      const date = typeof dateRaw === "number" ? excelDateToJSDate(dateRaw).toLocaleDateString() : dateRaw;
+
+      const hrm = r[col.hrm];
+      const ts = r[col.ts];
+      const bbsu = r[col.bbsu];
+      const ohp = r[col.ohp];
+      const run = r[col.run];
+
+      if (!participants[name]) {
+        participants[name] = {
+          name: r[col.name],
+          dates: [],
+          exercises: { "HRM": [], "TS": [], "BBSU": [], "OHP": [], "200m Run": [] }
+        };
+      }
+
+      participants[name].dates.push(date);
+      participants[name].exercises["HRM"].push(hrm);
+      participants[name].exercises["TS"].push(ts);
+      participants[name].exercises["BBSU"].push(bbsu);
+      participants[name].exercises["OHP"].push(ohp);
+      participants[name].exercises["200m Run"].push(run);
+    }
+
+    document.getElementById("dropzone").innerHTML = "Excel loaded successfully!";
+    populateDropdown();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function percentChange(a, b) {
+  if (a === 0) return "—";
+  return (((b - a) / a) * 100).toFixed(0) + "%";
+}
+
+function showParticipant() {
+  const input = document.getElementById("participantSelect").value.trim().toLowerCase();
+  const msg = document.getElementById("message");
+  const chart = document.getElementById("chart");
+  const content = document.getElementById("chartContent");
+  const legend = document.getElementById("legend");
+  const table = document.getElementById("tableContainer");
+
+  msg.textContent = "";
+  chart.style.display = "none";
+  content.innerHTML = "";
+  legend.innerHTML = "";
+  table.innerHTML = "";
+
+  if (!participants[input]) {
+    msg.textContent = "Participant not found.";
+    return;
+  }
+
+  const p = participants[input];
+  if (p.dates.length < 2) {
+    msg.textContent = "Please complete another Pop Tart 300.";
+    return;
+  }
+
+  document.getElementById("chartTitle").textContent = p.name + " — Improvement Visual";
+  chart.style.display = "block";
+
+  for (const ex in p.exercises) {
+    const vals = p.exercises[ex];
+    const max = Math.max(...vals);
+
+    const row = document.createElement("div");
+    row.className = "exercise-row";
+
+    const label = document.createElement("div");
+    label.className = "exercise-label";
+    label.innerHTML = `<span>${ex}</span><span>${vals.join(" → ")}</span>`;
+    row.appendChild(label);
+
+    const bars = document.createElement("div");
+    bars.className = "bars";
+
+    vals.forEach((v, i) => {
+      const bar = document.createElement("div");
+      bar.className = "bar date" + (i + 1);
+      bar.style.height = `calc(${v}/${max} * 100%)`;
+      bar.innerHTML = `<span>${v}</span>`;
+      bars.appendChild(bar);
+    });
+
+    row.appendChild(bars);
+    content.appendChild(row);
+  }
+
+  p.dates.forEach((d, i) => {
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.innerHTML = `<div class="legend-color date${i+1}"></div><span>${d}</span>`;
+    legend.appendChild(item);
+  });
+
+  const t = document.createElement("table");
+  let html = `
+    <thead><tr>
+      <th>Exercise</th>
+      <th>${p.dates[0]} → ${p.dates[1]}</th>
+      ${p.dates[2] ? `<th>${p.dates[1]} → ${p.dates[2]}</th>` : ""}
+      <th>Overall (${p.dates[0]} → ${p.dates[p.dates.length-1]})</th>
+    </tr></thead><tbody>
+  `;
+
+  for (const ex in p.exercises) {
+    const v = p.exercises[ex];
+    const first = percentChange(v[0], v[1]);
+    const mid = v[2] ? percentChange(v[1], v[2]) : "";
+    const overall = percentChange(v[0], v[v.length - 1]);
+
+    html += `
+      <tr>
+        <td>${ex}</td>
+        <td>${first}</td>
+        ${v[2] ? `<td>${mid}</td>` : ""}
+        <td class="highlight">${overall}</td>
+      </tr>
+    `;
+  }
+
+  html += "</tbody>";
+  t.innerHTML = html;
+  table.appendChild(t);
+}
+</script>
+
+</body>
+</html>
